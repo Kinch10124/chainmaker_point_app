@@ -1,0 +1,6 @@
+*.7z
+__pycache__/
+*.pyc
+*.log
+*.key
+*.crt
