@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""长安链积分应用 · 后端服务
+"""长安链积分应用 · 后端服务（Flask）
 
 通过调用 cmc 命令行工具与链交互，对外提供 HTTP 接口。
-不改动合约，账户使用可读名字（admin / alice / bob），
+不改动合约；账户使用可读名字（admin / alice / bob），
 权限由签名证书决定：org1 client1 是合约部署者（管理员），org2 client1 是普通用户。
 """
 
@@ -24,7 +24,7 @@ CMC_DIR = os.environ.get('CMC_DIR', '/home/kinich/chainmaker-go/tools/cmc')
 CONTRACT_NAME = os.environ.get('CONTRACT_NAME', 'jifen_aadjjpf')
 CHAIN_ID = 'chain1'
 
-# 两个签名身份。account 是该身份在应用里绑定的业务账户名。
+# 两个签名身份。account 是该身份在应用里预置的账户名，普通用户不预置。
 IDENTITIES = {
     'admin': {
         'label': '管理员',
@@ -35,7 +35,7 @@ IDENTITIES = {
     },
     'user': {
         'label': '普通用户',
-        'account': 'bob',
+        'account': None,
         'conf': './testdata/sdk_config_org2.yml',
         'org': 'wx-org2.chainmaker.org',
         'desc': '组织2 client1，普通调用者，无铸造权限',
@@ -96,7 +96,7 @@ def run_cmc(identity, method, params=None, timeout=60):
         except json.JSONDecodeError:
             payload = {}
 
-    cr = payload.get('contract_result', {}) or {}
+    cr = payload.get('contract_result') or {}
     raw = cr.get('result')
     try:
         value = base64.b64decode(raw).decode('utf-8', 'ignore') if raw else ''
@@ -105,9 +105,9 @@ def run_cmc(identity, method, params=None, timeout=60):
 
     message = cr.get('message', '') or ''
     ok = message == 'Success'
-
     if not ok and not message:
-        message = (proc.stderr or stdout or '命令执行失败').strip().splitlines()[-1][:200]
+        tail = (proc.stderr or stdout or '命令执行失败').strip().splitlines()
+        message = tail[-1][:200] if tail else '命令执行失败'
 
     return {
         'ok': ok,
@@ -125,8 +125,8 @@ def run_cmc(identity, method, params=None, timeout=60):
 def query_cached(identity, method, params=None, ttl=CACHE_TTL):
     """只读查询走短时缓存，避免每次请求都起一个 cmc 进程。"""
     key = (identity, method, json.dumps(params, sort_keys=True, ensure_ascii=False))
-    hit = _cache.get(key)
     now = time.time()
+    hit = _cache.get(key)
     if hit and now - hit[0] < ttl:
         return hit[1]
     res = run_cmc(identity, method, params)
@@ -136,6 +136,16 @@ def query_cached(identity, method, params=None, ttl=CACHE_TTL):
 
 def invalidate_cache():
     _cache.clear()
+
+
+def receipt(res):
+    return {
+        'tx_id': res['tx_id'],
+        'block_height': res['block_height'],
+        'timestamp': res['timestamp'],
+        'gas': res['gas'],
+        'elapsed_ms': res['elapsed_ms'],
+    }
 
 
 # ---------------------------------------------------------------- 参数校验
@@ -252,8 +262,13 @@ def transfer_api():
         return jsonify({'success': False, 'error': err}), 400
 
     ident = _current['identity']
-    # 应用层约束：转出账户一律取当前签名身份绑定的账户，不接受前端传入
-    sender = IDENTITIES[ident]['account']
+    # 管理员身份固定从 admin 转出；普通用户身份不预置账户，由用户显式填写
+    default_from = IDENTITIES[ident]['account']
+    sender, err = parse_account(data.get('from') or default_from)
+    if err:
+        return jsonify({'success': False, 'error': err}), 400
+    if default_from and sender != default_from:
+        return jsonify({'success': False, 'error': '转出账户必须与当前身份绑定账户一致'}), 400
     if sender == to:
         return jsonify({'success': False, 'error': '不能给自己转账'}), 400
 
@@ -327,16 +342,6 @@ def tx_api(tx_id):
             'message': payload.get('contract_result', {}).get('message', ''),
         },
     })
-
-
-def receipt(res):
-    return {
-        'tx_id': res['tx_id'],
-        'block_height': res['block_height'],
-        'timestamp': res['timestamp'],
-        'gas': res['gas'],
-        'elapsed_ms': res['elapsed_ms'],
-    }
 
 
 @app.errorhandler(404)
