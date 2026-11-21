@@ -351,7 +351,7 @@
       </div>
     </section>
 
-    <div class="result-panel">
+    <div class="result-panel" id="resultPanel">
       <div class="result-head">处理结果</div>
       <div class="result-body" id="result">等待操作</div>
       <div class="receipt" id="receipt" hidden></div>
@@ -391,23 +391,42 @@ function bootFailed(msg) {
   if (t) t.textContent = '后端未连接';
 }
 
-function showResult(ok, text, receipt) {
+const results = {};   // 每个页面各存一份结果：page -> { ok, text, receiptHtml }
+
+function renderResult() {
+  const data = results[state.page];
   const box = $('result');
-  box.className = 'result-body ' + (ok ? 'ok' : 'bad');
-  box.textContent = text;
   const r = $('receipt');
-  if (!receipt || !receipt.tx_id) {
+  if (!data) {
+    box.className = 'result-body';
+    box.textContent = '等待操作';
     r.hidden = true;
     r.innerHTML = '';
     return;
   }
-  const time = receipt.timestamp ? new Date(receipt.timestamp * 1000).toLocaleString('zh-CN') : '—';
-  r.hidden = false;
-  r.innerHTML =
-    '<div><span>交易 ID</span><b>' + receipt.tx_id + '</b></div>' +
-    '<div><span>区块高度</span><b>' + receipt.block_height + '</b></div>' +
-    '<div><span>上链时间</span><b>' + time + '</b></div>' +
-    '<div><span>Gas 消耗</span><b>' + receipt.gas + '</b></div>';
+  box.className = 'result-body ' + (data.ok ? 'ok' : 'bad');
+  box.textContent = data.text;
+  if (!data.receiptHtml) {
+    r.hidden = true;
+    r.innerHTML = '';
+  } else {
+    r.hidden = false;
+    r.innerHTML = data.receiptHtml;
+  }
+}
+
+function showResult(ok, text, receipt) {
+  let receiptHtml = '';
+  if (receipt && receipt.tx_id) {
+    const time = receipt.timestamp ? new Date(receipt.timestamp * 1000).toLocaleString('zh-CN') : '—';
+    receiptHtml =
+      '<div><span>交易 ID</span><b>' + receipt.tx_id + '</b></div>' +
+      '<div><span>区块高度</span><b>' + receipt.block_height + '</b></div>' +
+      '<div><span>上链时间</span><b>' + time + '</b></div>' +
+      '<div><span>Gas 消耗</span><b>' + receipt.gas + '</b></div>';
+  }
+  results[state.page] = { ok, text, receiptHtml };
+  renderResult();
 }
 
 function currentIdent() {
@@ -451,11 +470,14 @@ function renderIdentityCard() {
 
 function goPage(key) {
   state.page = key;
+  const pageEl = document.querySelector('[data-page="' + key + '"]');
   Object.keys(PAGES).forEach(k => {
     document.querySelector('[data-page="' + k + '"]').classList.toggle('on', k === key);
   });
+  pageEl.appendChild($('resultPanel'));   // 结果面板跟着当前页面走
   $('pageTitle').textContent = PAGES[key].label;
   $('pageDesc').textContent = PAGES[key].desc;
+  renderResult();
   renderNav();
 }
 
@@ -474,6 +496,7 @@ async function switchIdentity(id) {
   if (!r.success) return;
   state.identity = id;
   if (!PAGES[state.page].roles.includes(id)) state.page = 'overview';
+  Object.keys(results).forEach(k => delete results[k]);   // 切身份后清空所有历史结果
   renderIdentitySwitch();
   renderIdentityCard();
   goPage(state.page);
@@ -554,6 +577,7 @@ $('btnCaseMissing').onclick = () => doTransfer('alice', '');
 $('btnCaseInvalid').onclick = () => doTransfer('alice', '-5');
 
 (async function boot() {
+  goPage('overview');
   const probe = await api('/api/identity');
   if (!probe.success) {
     bootFailed('无法连接后端服务：' + (probe.error || '请求失败'));
