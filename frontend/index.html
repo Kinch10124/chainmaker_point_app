@@ -272,7 +272,12 @@
       <div class="grid grid-2">
         <div class="card">
           <h2 class="card-title">发起转账</h2>
-          <p class="card-sub">转出账户固定为当前身份绑定的账户</p>
+          <p class="card-sub">管理员身份固定从 admin 转出；普通用户身份需自行填写转出账户</p>
+          <div class="field">
+            <label>转出账户</label>
+            <input id="txFrom" placeholder="请输入转出账户">
+            <div class="hint">管理员身份已锁定为 admin，不可改为他人账户</div>
+          </div>
           <div class="field">
             <label>收款账户</label>
             <input id="txTo" placeholder="alice">
@@ -463,11 +468,14 @@ function renderIdentitySwitch() {
 
 function renderIdentityCard() {
   const ident = currentIdent();
+  const def = ident.account || '';
   $('identOrg').textContent = ident.org || '—';
-  $('identAccount').textContent = ident.account || '—';
+  $('identAccount').textContent = def || '未绑定';
   $('identPower').innerHTML = state.identity === 'admin'
     ? '<span class="pill">可铸造</span>'
     : '<span class="pill gray">无铸造权限</span>';
+  $('txFrom').value = def;
+  $('balAccount').value = def;
 }
 
 function goPage(key) {
@@ -533,13 +541,14 @@ async function doBalance(account) {
   showResult(true, '账户 ' + r.data.account + ' 当前余额 ' + r.data.balance + ' POINT');
 }
 
-async function doTransfer(to, amount) {
+async function doTransfer(to, amount, fromOverride) {
+  const from = (fromOverride !== undefined ? fromOverride : $('txFrom').value).trim();
+  if (!from) { showResult(false, '参数缺失：请填写转出账户'); return; }
   if (!to) { showResult(false, '参数缺失：请填写收款账户'); return; }
   showResult(true, '提交中…');
-  const r = await api('/api/transfer', { to, amount });
+  const r = await api('/api/transfer', { from, to, amount });
   if (!r.success) { showResult(false, '转账失败：' + r.error); return; }
   showResult(true, '转账成功：' + r.data.from + ' → ' + r.data.to + '，' + r.data.amount + ' POINT', r.data.receipt);
-  await loadMyBalance();
 }
 
 async function doMint(account, amount) {
@@ -576,10 +585,10 @@ $('btnBalance').onclick = () => doBalance($('balAccount').value.trim());
 $('btnTransfer').onclick = () => doTransfer($('txTo').value.trim(), $('txAmount').value.trim());
 $('btnMint').onclick = () => doMint($('mintAccount').value.trim(), $('mintAmount').value.trim());
 
-$('btnCaseBalance').onclick = () => runAs('user', () => doTransfer('alice', '999999'));
+$('btnCaseBalance').onclick = () => runAs('user', () => doTransfer('alice', '999999', 'bob'));
 $('btnCasePerm').onclick = () => runAs('user', () => doMint('alice', '100'));
-$('btnCaseMissing').onclick = () => doTransfer('alice', '');
-$('btnCaseInvalid').onclick = () => doTransfer('alice', '-5');
+$('btnCaseMissing').onclick = () => doTransfer('alice', '', 'admin');
+$('btnCaseInvalid').onclick = () => doTransfer('alice', '-5', 'admin');
 
 (async function boot() {
   goPage('overview');
