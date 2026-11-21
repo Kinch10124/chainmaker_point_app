@@ -229,15 +229,18 @@
 
       <div class="grid grid-2">
         <div class="card">
-          <h2 class="card-title">账户余额</h2>
-          <p class="card-sub" id="ownerCaption">当前身份绑定的账户</p>
-          <div class="balance-amount"><span id="myBalance">—</span><span class="balance-unit" id="unitLabel">POINT</span></div>
-          <div class="field" style="margin-top:18px">
-            <label>查询其他账户</label>
-            <input id="balAccount" placeholder="alice / bob">
-            <div class="hint">查询为只读操作，不产生链上交易</div>
+          <h2 class="card-title">账户余额查询</h2>
+          <p class="card-sub">输入账户名，查询链上余额</p>
+          <div class="field">
+            <label>账户名</label>
+            <input id="balAccount" placeholder="例如 admin / alice / bob">
+            <div class="hint">只读操作，不产生链上交易；账户名区分大小写</div>
           </div>
-          <button class="btn btn-ghost btn-block" id="btnBalance">查询余额</button>
+          <button class="btn btn-primary btn-block" id="btnBalance">查询余额</button>
+          <div id="balBoxWrap" style="display:none;margin-top:20px;padding-top:16px;border-top:1px dashed var(--line)">
+            <div class="metric-label" id="balWho">查询结果</div>
+            <div class="balance-amount"><span id="balValue">—</span><span class="balance-unit" id="unitLabel">POINT</span></div>
+          </div>
         </div>
 
         <div class="card">
@@ -249,7 +252,7 @@
               <div id="identOrg" style="font-size: 15.5px">—</div>
             </div>
             <div>
-              <div class="metric-label">绑定账户</div>
+              <div class="metric-label">默认转出账户</div>
               <div id="identAccount" style="font-size: 15.5px">—</div>
             </div>
             <div>
@@ -465,7 +468,6 @@ function renderIdentityCard() {
   $('identPower').innerHTML = state.identity === 'admin'
     ? '<span class="pill">可铸造</span>'
     : '<span class="pill gray">无铸造权限</span>';
-  $('ownerCaption').textContent = '当前身份绑定账户：' + (ident.account || '—');
 }
 
 function goPage(key) {
@@ -514,17 +516,20 @@ async function loadInfo() {
   $('unitLabel').textContent = r.data.symbol || 'POINT';
 }
 
-async function loadMyBalance() {
-  const ident = currentIdent();
-  if (!ident.account) return;
-  const r = await api('/api/balance', { account: ident.account });
-  $('myBalance').textContent = r.success ? Number(r.data.balance).toLocaleString('zh-CN') : '—';
+function loadMyBalance() {
+  // 概览页改为按需查询：切身份时清空上一次的查询结果
+  $('balValue').textContent = '—';
+  $('balWho').textContent = '查询结果';
+  $('balBoxWrap').style.display = 'none';
 }
 
 async function doBalance(account) {
   if (!account) { showResult(false, '请填写要查询的账户'); return; }
   const r = await api('/api/balance', { account });
-  if (!r.success) { showResult(false, r.error); return; }
+  if (!r.success) { $('balBoxWrap').style.display = 'none'; showResult(false, r.error); return; }
+  $('balWho').textContent = '账户 ' + r.data.account + ' 的链上余额';
+  $('balValue').textContent = Number(r.data.balance).toLocaleString('zh-CN');
+  $('balBoxWrap').style.display = 'block';
   showResult(true, '账户 ' + r.data.account + ' 当前余额 ' + r.data.balance + ' POINT');
 }
 
@@ -567,7 +572,7 @@ async function runAs(identity, fn) {
   }
 }
 
-$('btnBalance').onclick = () => doBalance(($('balAccount').value || currentIdent().account || '').trim());
+$('btnBalance').onclick = () => doBalance($('balAccount').value.trim());
 $('btnTransfer').onclick = () => doTransfer($('txTo').value.trim(), $('txAmount').value.trim());
 $('btnMint').onclick = () => doMint($('mintAccount').value.trim(), $('mintAmount').value.trim());
 
