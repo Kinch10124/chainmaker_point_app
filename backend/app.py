@@ -105,7 +105,10 @@ def run_cmc(identity, method, params=None, timeout=60):
 
     message = cr.get('message', '') or ''
     ok = message == 'Success'
-    if not ok and not message:
+    # 链上执行失败时 message 只有 "Fail"，真正的错误信息在 result 里（base64）
+    if not ok and value:
+        message = value
+    if not ok and (not message or message == 'Fail'):
         tail = (proc.stderr or stdout or '命令执行失败').strip().splitlines()
         message = tail[-1][:200] if tail else '命令执行失败'
 
