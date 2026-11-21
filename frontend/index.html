@@ -251,7 +251,7 @@
               <div class="metric-label">证书组织</div>
               <div id="identOrg" style="font-size: 15.5px">—</div>
             </div>
-            <div>
+            <div id="identAccountRow">
               <div class="metric-label">默认转出账户</div>
               <div id="identAccount" style="font-size: 15.5px">—</div>
             </div>
@@ -470,7 +470,8 @@ function renderIdentityCard() {
   const ident = currentIdent();
   const def = ident.account || '';
   $('identOrg').textContent = ident.org || '—';
-  $('identAccount').textContent = def || '未绑定';
+  $('identAccountRow').style.display = def ? '' : 'none';
+  $('identAccount').textContent = def || '—';
   $('identPower').innerHTML = state.identity === 'admin'
     ? '<span class="pill">可铸造</span>'
     : '<span class="pill gray">无铸造权限</span>';
